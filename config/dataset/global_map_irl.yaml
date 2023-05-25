@@ -1,0 +1,24 @@
+save_to: /home/atv/Desktop/datasets/wild_places_irl/global_map_res
+
+run_dirs:
+    - /home/atv/Desktop/datasets/wild_places/wild_places_rosbags/K-01
+    - /home/atv/Desktop/datasets/wild_places/wild_places_rosbags/V-01
+
+pointcloud_topic: /velodyne_cloud_registered_with_features
+odom_topic: /integrated_to_init
+
+map_metadata:
+    overhang: 2.5
+    length_x: 100.
+    length_y: 100.
+    resolution: 0.25
+
+dt: 0.25                    #step between states in expert traj
+H: 150                      #number of timesteps in expert traj
+sample_problem_every: 5.    #spacing between IRL problems is this (s)
+max_vel_thresh: 3.          #discard any samples with ANY vels above this
+min_vel_thresh: 0.2         #discard any samples with AVG vel below this
+
+voxel_downsample_before: 0.1
+voxel_downsample_after: 0.1
+pcl_skip: 4

@@ -54,11 +54,11 @@ if __name__ == '__main__':
     poses_df = pd.read_csv(os.path.join(dataset_fp, traj_fp, 'poses_aligned.csv'))
     poses = np.stack([poses_df[k] for k in ['x', 'y', 'z', 'qx', 'qy', 'qz', 'qw', 'timestamp']], axis=-1)
 
-    pcls = []
+    pcl_acc = o3d.geometry.PointCloud()
     timestamp_strs = poses_df['timestamp']
     pcl_fps = sorted(os.listdir(os.path.join(dataset_fp, traj_fp, 'Clouds')))
-    for i in np.arange(2000, 2100, 1):
-#    for i in np.arange(0, 5000, 10):
+#    for i in np.arange(2000, 2100, 1):
+    for i in np.arange(0, 5000, 10):
         pcl_fp = '{:.7f}'.format(timestamp_strs[i]) + '.pcd'
         pcl = o3d.io.read_point_cloud(os.path.join(dataset_fp, traj_fp, 'Clouds', pcl_fps[i]))
 
@@ -69,36 +69,57 @@ if __name__ == '__main__':
         T[:3, -1] = pose[:3]
         pcl = pcl.transform(T)
 
-        pcls.append(pcl)
+        pcl_acc += pcl
 
-    npts = sum([len(pcl.points) for pcl in pcls])
+    npts = len(pcl_acc.points)
     print('npts = {}'.format(npts))
 
-    pcl_np = np.concatenate([np.asarray(pcl.points) for pcl in pcls], axis=0)
-    xmin = pcl_np[:, 0].min()
-    xmax = pcl_np[:, 0].max()
-    ymin = pcl_np[:, 1].min()
-    ymax = pcl_np[:, 1].max()
-    resolution = 0.5
-    nx = int((xmax-xmin)/resolution) + 1
-    ny = int((ymax-ymin)/resolution) + 1
-    xmax = xmin + nx * resolution
-    ymax = ymin + ny * resolution
-
-    map_metadata = {
-        'origin': np.array([xmin, ymin]),
-        'length_x': xmax-xmin,
-        'length_y': ymax-ymin,
+    # experiment with generating a pose-centered map crop with global registration
+    crop_metadata = {
+        'length_x': 100.,
+        'length_y': 100.,
         'overhang': 2.5,
-        'resolution': resolution
+        'resolution': 0.25
     }
+    #TODO: check how z is handled (i.e. do I have to double overhang?)
+    crop_extent = np.array([
+        crop_metadata['length_x'],
+        crop_metadata['length_y'],
+        crop_metadata['overhang']
+    ])
+    for idx in np.random.randint(len(poses), size=(20,)):
+        pose = poses[idx]
+        R = Rotation.from_quat(pose[3:7]).as_matrix()
+        min_bnd = np.array([
+            pose[0] - crop_metadata['length_x']/2.,
+            pose[1] - crop_metadata['length_y']/2.,
+            -1e10
+        ])
+        max_bnd = np.array([
+            pose[0] + crop_metadata['length_x']/2.,
+            pose[1] + crop_metadata['length_y']/2.,
+            1e10
+        ])
+        bbox = o3d.geometry.AxisAlignedBoundingBox(
+            min_bound=min_bnd,
+            max_bound=max_bnd,
+        )
 
-    map_features = extract_map_features(pcl_np, map_metadata)
-    fig, axs = plt.subplots(2, 4, figsize=(18, 12))
-    axs = axs.flatten()
-    for i, (ax, label) in enumerate(zip(axs, ['height_low', 'height_high', 'height_max', 'diff', 'SVD1', 'SVD2', 'SVD3', 'roughness'])):
-        ax.imshow(map_features[..., i], cmap='gray')
-        ax.set_title(label)
-    plt.show()
+        local_pcl = pcl_acc.crop(bbox)
+        local_pcl_np = np.asarray(local_pcl.points)
 
-    o3d.visualization.draw_geometries(pcls)
+        map_metadata = {
+            'origin': min_bnd[:2],
+            'length_x': crop_metadata['length_x'],
+            'length_y': crop_metadata['length_y'],
+            'resolution': crop_metadata['resolution'],
+            'overhang': crop_metadata['overhang']
+        }
+
+        map_features = extract_map_features(local_pcl_np, map_metadata)
+        fig, axs = plt.subplots(2, 4, figsize=(18, 12))
+        axs = axs.flatten()
+        for i, (ax, label) in enumerate(zip(axs, ['height_low', 'height_high', 'height_max', 'diff', 'SVD1', 'SVD2', 'SVD3', 'roughness'])):
+            ax.imshow(map_features[..., i], cmap='gray')
+            ax.set_title(label)
+        plt.show()
